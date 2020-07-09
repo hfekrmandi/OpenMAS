@@ -63,7 +63,7 @@ waypointIndex = cell(1);
 nameString = sprintf('WP-%s',agentIndex{1}.name);
 waypointIndex{1} = waypoint('radius',inputConfig.waypointRadius,'priority',1,'name',nameString);
 % APPLY GLOBAL STATE VARIABLES
-waypointIndex{1}.SetGLOBAL('position',[(diagSpacing*(index+1));(diagSpacing*(index+1));0];
+waypointIndex{1}.SetGLOBAL('position',[(diagSpacing*(index+1));(diagSpacing*(index+1));0]);
 waypointIndex{1}.SetGLOBAL('velocity',[0;0;0]);
 waypointIndex{1}.SetGLOBAL('quaternion',[1;0;0;0]);
 waypointIndex{1} = waypointIndex{1}.CreateAgentAssociation(agentIndex{1});  % Create waypoint with association to agent
@@ -73,7 +73,7 @@ waypointIndex{1} = waypointIndex{1}.CreateAgentAssociation(agentIndex{1});  % Cr
 headingVector = waypointIndex{1}.GetGLOBAL('position') - agentIndex{1}.GetGLOBAL('position');
 headingVector = headingVector/norm(headingVector);
 q = OMAS_geometry.vectorsToQuaternion(headingVector,[1;0;0]);
-agentIndex{1}.GetGLOBAL('quaternion',q);
+agentIndex{1}.SetGLOBAL('quaternion',q);
 
 %% /////////////// CLEAN UP ///////////////////////////////////////////////
 % BUILD THE COMPLETE OBJECT SET

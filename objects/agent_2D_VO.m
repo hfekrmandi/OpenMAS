@@ -12,7 +12,7 @@ classdef agent_2D_VO < agent_2D & agent_VO
             % specific parameters.
 
             % Call the super class
-            this@agent_2D(varargin); 
+            this@agent_2D(varargin);
             
             % Assign defaults 
             this.feasabliltyMatrix = [];  % Omit parent field
@@ -63,7 +63,7 @@ classdef agent_2D_VO < agent_2D & agent_VO
             % ////////////////// OBSTACLE AVOIDANCE ///////////////////////
             % Modify the desired velocity with the augmented avoidance velocity.
             algorithm_start = tic; algorithm_indicator = 0; 
-            avoidanceSet = [obstacleSet,agentSet];
+            avoidanceSet = vertcat(obstacleSet,agentSet);
             if ~isempty(avoidanceSet)
                 algorithm_indicator = 1;
                 % GET THE UPDATED DESIRED VELOCITY

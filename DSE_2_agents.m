@@ -5,7 +5,7 @@ clear all; close all;
 % ADD THE PROGRAM PATHS
 addpath('environment');
 addpath('objects');  
-addpath('toolboxes');
+%addpath('toolboxes');
 addpath('scenarios'); 
 
 % CODE DEBUG COMMANDS %
@@ -23,27 +23,28 @@ fprintf('[SETUP]\tInitialising example script.\n');
 sim_outputPath = strcat(userdir,'\desktop\openmas-data');
 sim_vebosity   = 1;
 sim_warningDistance = 2;
-sim_maxDuration = 20;
-sim_timeStep    = 0.1;                        % Nominal (0.25s)
+sim_maxDuration = 5;
+sim_timeStep    = 0.25;                        % Nominal (0.25s)
 sim_idleTimeOut = 5*sim_timeStep;
 
 sim_publishFigures = false;
 % sim_publishFigures = true;
-sim_figureSet = {'all'};
+% sim_figureSet = {'all'};
 % sim_figureSet = {'events','plan','inputs','isometric','gif'};
-% sim_figureSet = {'plan','inputs','isometric','gif'};
-% sim_figureSet = {'gif','avoidance'};
+% sim_figureSet = {'plan','avoidance','inputs','isometric','gif'};
+sim_figureSet = {'isometric'};
 
 %% SCENARIO PARAMETERS
-sim_agentNumber     = 5;
-sim_agentRadius     = 0.1;
-sim_agentOrbit      = 5;
+sim_agentNumber     = 1;
+sim_agentRadius     = 0.5;
+sim_agentOrbit      = 10;
 sim_agentVelocity   = 5;
 sim_adjacencyMatrix = double(~eye(sim_agentNumber));
-sim_waypointOrbit   = 10;
-sim_waypointRadius  = 0.1;
+sim_waypointOrbit   = 2;
+sim_waypointRadius  = 1;
 sim_offsetAngle     = pi/4;
-sim_obstacleNumber  = 3;
+sim_obstacleNumber  = 0;
+sim_obstacleOrbit   = 10;
 sim_noiseSigma      = 0.2;
 sim_plotScenario    = true;
 
@@ -57,7 +58,7 @@ for index = 1:sim_agentNumber
 %     agentIndex{index} = agent_2D();  
 %     agentIndex{index} = agent_2D_test('radius',sim_agentRadius);
 
-    agentIndex{index} = agent_example('radius',sim_agentRadius);
+%     agentIndex{index} = agent_example('radius',sim_agentRadius);
 
 % QUADCOPTER DYNAMICS
 %     agentIndex{index} = quadcopter_legacy();
@@ -105,7 +106,7 @@ for index = 1:sim_agentNumber
 %     agentIndex{index} = agent_VO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_RVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_HRVO('radius',sim_agentRadius);
-%     agentIndex{index} = agent_2D_VO('radius',sim_agentRadius);
+     agentIndex{index} = agent_2D_VO('radius',sim_agentRadius,'detectionRadius',25);
 %     agentIndex{index} = agent_2D_RVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_2D_HRVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_2D_RVO2('radius',sim_agentRadius); 
@@ -121,14 +122,14 @@ for index = 1:sim_obstacleNumber
 	% OBSTACLES
 %     obstacleIndex{index} = obstacle();
 %     obstacleIndex{index} = obstacle_cuboid();
-%     obstacleIndex{index} = obstacle_spheroid();
+     obstacleIndex{index} = obstacle_spheroid();
 end
 
 %% PLACE AGENT OBJECTS IN PRE-DEFINED SCENARIO
 % FORMATION CONTROL TESTS
 % [ objectIndex ] = GetScenario_corridor('agents',agentIndex,'adjacencyMatrix',sim_adjacencyMatrix,'plot',sim_plotScenario);
 % [ objectIndex ] = GetScenario_formation_split('agents',agentIndex,'agentSpacing',4,'adjacencyMatrix',sim_adjacencyMatrix,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
-% [ objectIndex ] = GetScenario_formation_fourObstacles('agents',agentIndex,'obstacleRadius',2,'plot',sim_plotScenario);
+ [ objectIndex ] = GetScenario_formation_fourObstacles('agents',agentIndex,'obstacles',sim_obstacleNumber,'obstacleRadius',1,'obstacle_orbit',sim_obstacleOrbit,'waypointOrbit',sim_waypointOrbit,'offsetAngle',pi/2,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
 
 % % OBSTACLE TESTS
 % [ objectIndex ] = GetScenario_fourCuboidObstacles('agents',agentIndex,'plot',sim_plotScenario);
@@ -136,7 +137,7 @@ end
 
 % % AGENT TESTS
 % [ objectIndex ] = GetScenario_twoLines('agents',agentIndex,'agentVelocity',sim_agentVelocity,'padding',5,'agentSeparation',sim_agentOrbit,'waypointSeparation',sim_waypointOrbit,'agentVelocity',sim_agentVelocity,'plot',sim_plotScenario);
-[ objectIndex ] = GetScenario_concentricRing('agents',agentIndex,'agentOrbit',sim_agentOrbit,'agentVelocity',sim_agentVelocity,'waypointOrbit',sim_waypointOrbit,'waypointRadius',sim_waypointRadius,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
+% [ objectIndex ] = GetScenario_concentricRing('agents',agentIndex,'agentOrbit',sim_agentOrbit,'agentVelocity',sim_agentVelocity,'waypointOrbit',sim_waypointOrbit,'waypointRadius',sim_waypointRadius,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
 % [ objectIndex ] = GetScenario_concentricRing('agents',agentIndex,'agentOrbit',sim_agentOrbit,'agentVelocity',sim_agentVelocity,'waypointOrbit',sim_waypointOrbit,'offsetAngle',pi/2,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
 % [ objectIndex ] = GetScenario_concentricSphere('agents',agentIndex,'agentOrbit',sim_agentOrbit,'agentVelocity',sim_agentVelocity,'waypointOrbit',sim_waypointOrbit,'plot',sim_plotScenario);
 % [ objectIndex ] = GetScenario_concentricAngle('agents',agentIndex,'agentOrbit',sim_agentOrbit,'agentVelocity',sim_agentVelocity,'waypointOrbit',sim_waypointOrbit,'angle',sim_offsetAngle,'plot',sim_plotScenario);
@@ -155,7 +156,7 @@ end
 
 %% %%%%%% INITIALISE THE SIMULATION WITH THE OBJECT INDEX %%%%%%%%%%%%%%%%%
 [DATA,META] = OMAS_initialise('objects',objectIndex,...
-                             'duration',sim_maxDuration,... 
+                             'duration',sim_maxDuration,...
                                    'dt',sim_timeStep,...
                           'idleTimeOut',sim_idleTimeOut,...
                               'figures',sim_figureSet,...

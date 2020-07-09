@@ -365,7 +365,8 @@ classdef agent_tools < objectDefinition
                             data = this.MEMORY(logicalIDIndex).(memFields{entry});
                             % Attempt to merge data
                             try
-                                data(:,this.MEMORY(logicalIDIndex).sampleNum) = observedObject.(memFields{entry});
+                                % ,this.MEMORY(logicalIDIndex).sampleNum
+                                data(:) = observedObject.(memFields{entry});
                             catch memoryUpdateError
                                 %warning('Error inserting new data entry, are they the same dimension?')
                                 rethrow(memoryUpdateError);
@@ -485,7 +486,8 @@ classdef agent_tools < objectDefinition
         % MEMORY - Get the object priority
         function [p_j]  = GetObjectPriority(this,objectID)
             logicalIDIndex = [this.MEMORY(:).objectID] == objectID;
-            p_j = 1/norm(this.MEMORY(logicalIDIndex).position(:,this.MEMORY(logicalIDIndex).sampleNum));
+            % ,this.MEMORY(logicalIDIndex).sampleNum
+            p_j = 1/norm(this.MEMORY(logicalIDIndex).position(:));
         end
         % MEMORY - WHOLE STRUCTURE BY ID
         function [data] = GetMemoryStructByID(this,objectID)
@@ -555,6 +557,9 @@ classdef agent_tools < objectDefinition
             MEMORY.radius       = circularBuffer(NaN(1,horizonSteps));
             % Spherical measurements
             MEMORY.range        = circularBuffer(NaN(1,horizonSteps));
+            MEMORY.P            = circularBuffer(NaN(3,3,horizonSteps));
+            MEMORY.x            = circularBuffer(NaN(3,horizonSteps));
+            MEMORY.y            = circularBuffer(NaN(3,horizonSteps));
             MEMORY.heading      = circularBuffer(NaN(1,horizonSteps));
             MEMORY.elevation	= circularBuffer(NaN(1,horizonSteps));
             MEMORY.width    	= circularBuffer(NaN(1,horizonSteps));

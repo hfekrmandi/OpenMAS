@@ -52,7 +52,7 @@ classdef agent_example < agent
             % /////////////////////////////////////////////////////////////
         end
         % Setup
-        function [this] = setup(this,v,eta)
+        function [this] = setup(this, v, eta)
             % Define the initial state
             this.localState = zeros(6,1);
             this.localState(4:6,1) = eta;

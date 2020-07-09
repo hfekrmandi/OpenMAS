@@ -106,7 +106,7 @@ classdef circularBuffer
                     end
                     % Attempt to assign new value
                     try
-                        obj.data(newDim{:}) = input;                           % Assign new value to buffer
+                        obj.data = input;                           % Assign new value to buffer
                     catch insertError
                         warning('Unable to insert value into circular buffer, do the dimensions match?');
                         rethrow(insertError);
