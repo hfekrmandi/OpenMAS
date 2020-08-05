@@ -1,6 +1,8 @@
 %% DEBUG SIMULATION SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear all; close all;
+dbstop if error
+% rng(0);
 
 % ADD THE PROGRAM PATHS
 addpath('environment');
@@ -24,7 +26,7 @@ sim_outputPath = strcat(userdir,'\desktop\openmas-data');
 sim_vebosity   = 1;
 sim_warningDistance = 2;
 sim_maxDuration = 50;
-sim_timeStep    = 0.25;                        % Nominal (0.25s)
+sim_timeStep    = 0.5;                        % Nominal (0.25s)
 sim_idleTimeOut = 5*sim_timeStep;
 
 sim_publishFigures = false;
@@ -32,20 +34,20 @@ sim_publishFigures = false;
 % sim_figureSet = {'all'};
 % sim_figureSet = {'events','plan','inputs','isometric','gif'};
 % sim_figureSet = {'plan','avoidance','inputs','isometric','gif'};
-sim_figureSet = {'isometric'};
+sim_figureSet = {'estimates_rel', 'estimate_errors'};
 
 %% SCENARIO PARAMETERS
 sim_agentNumber     = 3;
 sim_agentRadius     = 0.5;
-sim_agentOrbit      = 10;
+sim_agentOrbit      = 3;
 sim_agentVelocity   = 5;
 sim_adjacencyMatrix = double(~eye(sim_agentNumber));
 sim_waypointOrbit   = 2;
-sim_waypointRadius  = 1;
+sim_waypointRadius  = 0.5;
 sim_offsetAngle     = pi/4;
-sim_obstacleNumber  = 5;
+sim_obstacleNumber  = 0;
 sim_obstacleOrbit   = 10;
-sim_noiseSigma      = 0.2;
+sim_noiseSigma      = 0.5;
 sim_plotScenario    = true;
 
 %% INITIALISE AGENTS
@@ -55,7 +57,7 @@ for index = 1:sim_agentNumber
 %     agentIndex{index} = objectDefinition('radius',sim_agentRadius);     
 %     agentIndex{index} = agent('radius',sim_agentRadius);
 %     agentIndex{index} = agent_test('radius',sim_agentRadius);
-%     agentIndex{index} = agent_2D();  
+     agentIndex{index} = agent_2D();  
 %     agentIndex{index} = agent_2D_test('radius',sim_agentRadius);
 
 %     agentIndex{index} = agent_example('radius',sim_agentRadius);
@@ -106,7 +108,8 @@ for index = 1:sim_agentNumber
 %     agentIndex{index} = agent_VO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_RVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_HRVO('radius',sim_agentRadius);
-     agentIndex{index} = agent_2D_VO('radius',sim_agentRadius,'detectionRadius',25);
+%     agentIndex{index} = agent_2D_VO('radius',sim_agentRadius,'detectionRadius',25);
+%     agentIndex{index} = agent_2D_unicycle('radius',sim_agentRadius,'detectionRadius',25);
 %     agentIndex{index} = agent_2D_RVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_2D_HRVO('radius',sim_agentRadius);
 %     agentIndex{index} = agent_2D_RVO2('radius',sim_agentRadius); 
@@ -122,14 +125,15 @@ for index = 1:sim_obstacleNumber
 	% OBSTACLES
 %     obstacleIndex{index} = obstacle();
 %     obstacleIndex{index} = obstacle_cuboid();
-     obstacleIndex{index} = obstacle_spheroid();
+     %obstacleIndex{index} = obstacle_spheroid();
 end
 
 %% PLACE AGENT OBJECTS IN PRE-DEFINED SCENARIO
 % FORMATION CONTROL TESTS
 % [ objectIndex ] = GetScenario_corridor('agents',agentIndex,'adjacencyMatrix',sim_adjacencyMatrix,'plot',sim_plotScenario);
 % [ objectIndex ] = GetScenario_formation_split('agents',agentIndex,'agentSpacing',4,'adjacencyMatrix',sim_adjacencyMatrix,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
- [ objectIndex ] = GetScenario_formation_fourObstacles('agents',agentIndex,'obstacles',sim_obstacleNumber,'obstacleRadius',1,'obstacle_orbit',sim_obstacleOrbit,'waypointOrbit',sim_waypointOrbit,'offsetAngle',pi/2,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
+% [ objectIndex ] = GetScenario_formation_fourObstacles('agents',agentIndex,'obstacles',sim_obstacleNumber,'obstacleRadius',1,'obstacle_orbit',sim_obstacleOrbit,'waypointOrbit',sim_waypointOrbit,'offsetAngle',pi/2,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
+ [ objectIndex ] = Scenario_3_agents_5_waypoints('agents',agentIndex,'obstacles',sim_obstacleNumber,'obstacleRadius',2,'obstacle_orbit',sim_obstacleOrbit,'waypointOrbit',sim_waypointOrbit,'offsetAngle',pi/2,'plot',sim_plotScenario,'noiseFactor',sim_noiseSigma);
 
 % % OBSTACLE TESTS
 % [ objectIndex ] = GetScenario_fourCuboidObstacles('agents',agentIndex,'plot',sim_plotScenario);

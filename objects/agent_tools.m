@@ -48,7 +48,8 @@ classdef agent_tools < objectDefinition
                     % SELECT HIGHEST PRIORITY, BUT NOT ACHIEVED
                     invalidWaypointIDs = this.achievedWaypoints;            % Get the achieved waypoint IDs
                     availableWaypointIDs = waypointMatrix(2,:);            % Get those visable IDs
-                    validWaypoints = availableWaypointIDs ~= invalidWaypointIDs;   % Get those visible IDs that are valid
+                    validWaypoints = setdiff(availableWaypointIDs, invalidWaypointIDs);
+                    %validWaypoints = availableWaypointIDs ~= invalidWaypointIDs;   % Get those visible IDs that are valid
                     % IF NO FURTHER VALID IDs
                     if ~any(validWaypoints)
                         this.targetWaypoint = [];
@@ -58,7 +59,17 @@ classdef agent_tools < objectDefinition
                     end
                     
                     % SELECT REMAINING WAYPOINTS
-                    validWaypoints = waypointMatrix(:,validWaypoints); % Get waypoinSet location, IDs and priority of valid waypoints
+                    if numel(validWaypoints) > 1
+                        index = [];
+                        for i = 1:numel(validWaypoints)
+                            arr = waypointMatrix(2,:);
+                            val = validWaypoints(i);
+                            index = [index, find(waypointMatrix(2,:) == validWaypoints(i))];
+                        end
+                    else
+                        index = find(waypointMatrix(2,:) == validWaypoints);
+                    end
+                    validWaypoints = waypointMatrix(:,index); % Get waypoinSet location, IDs and priority of valid waypoints
                     % SELECT WAYPOINT OF NEXT HIGHEST PRIORITY
                     [~,maxValidIndex ] = max(validWaypoints(3,:));       % Get the index of max priority waypoint
                     waypointSetIndex = validWaypoints(1,maxValidIndex);  % Get the location of the target waypoint in the waypoint set
@@ -293,6 +304,7 @@ classdef agent_tools < objectDefinition
             GLOBAL.position = [0;0;0];          % Global Cartesian position
             GLOBAL.velocity = [0;0;0];          % Global Cartesian velocity
             GLOBAL.quaternion = [1;0;0;0];      % Global quaternion pose
+            GLOBAL.X = zeros(12,1);             % Global 12D state
             GLOBAL.idleStatus = false;          % Object idle logical
             GLOBAL.is3D = true;                 % Object operates in 3D logical
             GLOBAL.priorState = [];
@@ -365,7 +377,8 @@ classdef agent_tools < objectDefinition
                             data = this.MEMORY(logicalIDIndex).(memFields{entry});
                             % Attempt to merge data
                             try
-                                data(:,this.MEMORY(logicalIDIndex).sampleNum) = observedObject.(memFields{entry});
+                                % ,this.MEMORY(logicalIDIndex).sampleNum
+                                data(:) = observedObject.(memFields{entry});
                             catch memoryUpdateError
                                 %warning('Error inserting new data entry, are they the same dimension?')
                                 rethrow(memoryUpdateError);
@@ -485,7 +498,8 @@ classdef agent_tools < objectDefinition
         % MEMORY - Get the object priority
         function [p_j]  = GetObjectPriority(this,objectID)
             logicalIDIndex = [this.MEMORY(:).objectID] == objectID;
-            p_j = 1/norm(this.MEMORY(logicalIDIndex).position(:,this.MEMORY(logicalIDIndex).sampleNum));
+            % ,this.MEMORY(logicalIDIndex).sampleNum
+            p_j = 1/norm(this.MEMORY(logicalIDIndex).position(:));
         end
         % MEMORY - WHOLE STRUCTURE BY ID
         function [data] = GetMemoryStructByID(this,objectID)
@@ -555,6 +569,9 @@ classdef agent_tools < objectDefinition
             MEMORY.radius       = circularBuffer(NaN(1,horizonSteps));
             % Spherical measurements
             MEMORY.range        = circularBuffer(NaN(1,horizonSteps));
+            MEMORY.P            = circularBuffer(NaN(3,3,horizonSteps));
+            MEMORY.x            = circularBuffer(NaN(3,horizonSteps));
+            MEMORY.y            = circularBuffer(NaN(3,horizonSteps));
             MEMORY.heading      = circularBuffer(NaN(1,horizonSteps));
             MEMORY.elevation	= circularBuffer(NaN(1,horizonSteps));
             MEMORY.width    	= circularBuffer(NaN(1,horizonSteps));

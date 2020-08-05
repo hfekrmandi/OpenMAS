@@ -33,6 +33,7 @@ switch upper(char(figureLabel))
             'AVOIDANCE',...
             'INPUTS',...
             'PLAN',...
+            'ESTIMATES',...
             'ISOMETRIC',...
             'GIF',...
             'AVI',...
@@ -65,11 +66,11 @@ switch upper(char(figureLabel))
     case 'CLOSEST' %% /////////////////////////////////////////////////////
         fprintf('[%s]\tGenerating closest separation figure.\n',SIM.phase);
         [figureNumber,~] = GetFigure_minimumSeparations(SIM,DATA,figureNumber);
-        
-    case 'AVOIDANCE' %% ///////////////////////////////////////////////////
-        fprintf('[%s]\tGenerating object avoidance rates figure(s).\n',SIM.phase);
-        [figureNumber,~] = GetFigure_avoidanceRates(SIM,objectIndex,DATA,figureNumber);
-        
+         
+     case 'AVOIDANCE' %% ///////////////////////////////////////////////////
+         fprintf('[%s]\tGenerating object avoidance rates figure(s).\n',SIM.phase);
+         [figureNumber,~] = GetFigure_avoidanceRates(SIM,objectIndex,DATA,figureNumber);
+         
     case 'INPUTS' %% //////////////////////////////////////////////////////
         fprintf('[%s}\tGenerating control input figure.\n',SIM.phase);
         [figureNumber,~] = GetFigure_inputs(SIM,objectIndex,DATA,figureNumber);
@@ -78,6 +79,14 @@ switch upper(char(figureLabel))
         fprintf('[%s}\tGenerating top-down 2D(plan) figure.\n',SIM.phase);
         [figureNumber,~] = GetFigure_plan(SIM,objectIndex,DATA,figureNumber);
         
+    case 'ESTIMATES_REL' %% ///////////////////////////////////////////////////
+        fprintf('[%s]\tGenerating estimates figure.\n',SIM.phase);
+        [figureNumber,~] = GetFigure_estimates_rel(SIM,objectIndex,DATA,figureNumber);
+
+    case 'ESTIMATE_ERRORS' %% ///////////////////////////////////////////////////
+        fprintf('[%s]\tGenerating estimates figure.\n',SIM.phase);
+        [figureNumber,~] = GetFigure_estimate_errors(SIM,objectIndex,DATA,figureNumber);
+
     case 'ISOMETRIC' %% ///////////////////////////////////////////////////
         fprintf('[%s]\tGenerating isometric trajectory figure.\n',SIM.phase);
         [figureNumber,~] = GetFigure_isometric(SIM,objectIndex,DATA,figureNumber);
@@ -121,15 +130,10 @@ logicalMatrix = false(1,numRep*DATA.figureProperties.stepsPerFrame);  % Frame se
 outputStructure = struct();
 for objectNo = 1:DATA.totalObjects
     % GET THE COMPLETE STATE SET
-%     completeStateSet = OMAS_getTrajectoryData_mex(DATA.globalTrajectories,...
-%                                                   SIM.globalIDvector,...
-%                                                   SIM.OBJECTS(objectNo).objectID,...
-%                                                   inf);                    % All valid states for the object 
     completeStateSet = OMAS_getTrajectoryData(DATA.globalTrajectories,...
-                                              SIM.globalIDvector,...
-                                              SIM.OBJECTS(objectNo).objectID,...
-                                              inf);                    % All valid states for the object 
-    
+                                                  SIM.globalIDvector,...
+                                                  SIM.OBJECTS(objectNo).objectID,...
+                                                  inf);                    % All valid states for the object 
     completeStateSet = completeStateSet(:,1:numRep*DATA.figureProperties.stepsPerFrame);
     
     % GET THE INDICES OF EACH FRAME IN THE STATE SPACE
@@ -145,8 +149,6 @@ end
 frameTimeVector = SIM.TIME.timeVector(1:numRep*DATA.figureProperties.stepsPerFrame);
 outputStructure.frameTimeVector = frameTimeVector(logicalMatrix);
 
-
 % SAVE A TEMPORARY FILE WITH THE STATES OF EACH OBJECT
-filePath = [SIM.outputPath,SIM.systemFile];
-save(filePath,'-struct','outputStructure','-append');
+save([SIM.outputPath,SIM.systemFile],'-struct','outputStructure','-append');
 end

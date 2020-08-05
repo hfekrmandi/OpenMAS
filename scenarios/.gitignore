@@ -1,5 +1,0 @@
-*
-# Omit all file types
-!*/icoshedrals
-# With the exception of
-!*.m
