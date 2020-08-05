@@ -779,14 +779,14 @@ classdef agent_interval < agent
             memStruct.sampleNum = uint8(1);
             % Cartesian measurements
             memStruct.time      = circularBuffer(NaN(1,horizonSteps));
-            memStruct.position  = circularBuffer(intval(NaN(dim,horizonSteps)));
-            memStruct.velocity  = circularBuffer(intval(NaN(dim,horizonSteps)));
-            memStruct.radius    = circularBuffer(intval(NaN(1,horizonSteps)));
+            memStruct.position  = circularBuffer((NaN(dim,horizonSteps)));
+            memStruct.velocity  = circularBuffer((NaN(dim,horizonSteps)));
+            memStruct.radius    = circularBuffer((NaN(1,horizonSteps)));
             % Spherical measurements
-            memStruct.range     = circularBuffer(intval(NaN(1,horizonSteps)));
-            memStruct.heading   = circularBuffer(intval(NaN(1,horizonSteps)));
-            memStruct.elevation = circularBuffer(intval(NaN(1,horizonSteps)));
-            memStruct.width     = circularBuffer(intval(NaN(1,horizonSteps)));
+            memStruct.range     = circularBuffer((NaN(1,horizonSteps)));
+            memStruct.heading   = circularBuffer((NaN(1,horizonSteps)));
+            memStruct.elevation = circularBuffer((NaN(1,horizonSteps)));
+            memStruct.width     = circularBuffer((NaN(1,horizonSteps)));
             % Additionals
             memStruct.geometry = struct('vertices',[],'faces',[],'normals',[],'centroid',[]);
             memStruct.priority = [];

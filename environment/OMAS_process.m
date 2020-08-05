@@ -17,7 +17,7 @@ META.phase = 'META'; % Declare the simuation active phase
 EVENTS = [];         % Reset the EVENT log container
 
 % PREPARE THE OUTPUT DATA CONTAINER
-[DATA] = GetOutputStructure(META); 
+[DATA] = GetOutputStructure(META);
 
 %%%%%%%%%%%%%%%%%%%%%% BEGIN TIME-STEP INTERATIONS %%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('[%s]\n[%s]\tLAUNCHING SIMULATION...\n[%s]\n',META.phase,META.phase,META.phase);
@@ -100,6 +100,7 @@ while step <= META.TIME.numSteps
             objectIndex{ID1}.objectID,...
             objectIndex{ID1}.GetGLOBAL('velocity'),...
             objectIndex{ID1}.GetGLOBAL('quaternion'),...
+            objectIndex{ID1}.GetGLOBAL('X'),...
             objectIndex{ID1}.GetGLOBAL('idleStatus')); 
     end
     % /////////////////////////////////////////////////////////////////////
@@ -113,7 +114,23 @@ while step <= META.TIME.numSteps
 %         META.OBJECTS(ID1) = updateVisuals(META.OBJECTS(ID1));
 %     end
     
-    % 5. //////// UPDATE SIMULATION/ENVIRONMENTAL META DATA (@t=k) ////////
+    %  5. ////////////// UPDATE Communication matrix (@t=k) ///////////////
+    if step < 20 || step > 40
+%         comm_list = [[1, 2]; [1, 2]];
+%         comm_list = {{1, 2, 3}; {1, 2, 3}; {1, 2, 3}};
+%         comm_list = [[1, 2, 3]; [1, 2, 3]; [1, 2, 3]];
+        comm_list = {{2, 3}; {1, 3}; {1, 2}};
+    else
+%         comm_list = [[1]; [2]];
+%         comm_list = {{1, 3}; {2, 3}; {1, 2, 3}};
+%         comm_list = [[3]; [3]; [1, 2]];
+        comm_list = {{3}; {3}; {1, 2}};
+    end
+%     comm_list = {{3}; {3}; {1, 2}};
+%     comm_list = {{2, 3}; {1, 3}; {1, 2}};
+    objectIndex = apply_comm_model(META, objectIndex, comm_list);
+
+    % 6. //////// UPDATE SIMULATION/ENVIRONMENTAL META DATA (@t=k) ////////
     [META,metaEVENTS] = UpdateSimulationMeta(META,objectIndex);            % Update META snapshot with equivilant objectIndex.state
     % LOG THE META EVENTS
     if ~isempty(metaEVENTS)                                                % If META events occurred this timestep
@@ -121,12 +138,12 @@ while step <= META.TIME.numSteps
     end
     % /////////////////////////////////////////////////////////////////////
     
-    % 6. //// COMPUTE AGENT CYCLES (UPDATE GLOBAL REPRESENTATION (@t=k) ///
+    % 7. ////////// COMPUTE INFORMATION FILTER ESTIMATION (@t=k) //////////
     if META.threadPool ~= 0
         objectSnapshot = objectIndex;                                      % Make a temporary record of the object set
         parfor (ID1 = 1:META.totalObjects)
             % MOVE THROUGH OBJECT INDEX AND UPDATE EACH AGENT
-            [objectIndex{ID1},objectEVENTS] = UpdateObjects(META,objectSnapshot,objectIndex{ID1});            
+            [detection{ID1},objectIndex{ID1},objectEVENTS] = UpdateInformationFilter(META,objectSnapshot,objectIndex{ID1});
             % LOG THE OBJECT EVENTS
             if ~isempty(objectEVENTS)
                 EVENTS = vertcat(EVENTS,objectEVENTS);
@@ -135,7 +152,7 @@ while step <= META.TIME.numSteps
     else
         for ID1 = 1:META.totalObjects
             % MOVE THROUGH OBJECT INDEX AND UPDATE EACH AGENT
-            [objectIndex{ID1},objectEVENTS] = UpdateObjects(META,objectIndex,objectIndex{ID1}); % Update objectIndex snapshot with new META data
+            [detection{ID1},objectIndex{ID1},objectEVENTS] = UpdateInformationFilter(META,objectIndex,objectIndex{ID1}); % Update objectIndex snapshot with new META data
             % LOG THE OBJECT EVENTS
             if ~isempty(objectEVENTS)                                      % If objectEVENTS occur in this timestep
                 EVENTS = vertcat(EVENTS,objectEVENTS);                     % Append to global EVENTS
@@ -144,7 +161,68 @@ while step <= META.TIME.numSteps
     end
     % /////////////////////////////////////////////////////////////////////
     
-    % 7. /// THE 'OBJECT.VIRTUAL' PROPERTIES IS NOW UPDATED FOR (t=k+1) ///
+    % 8. ///////////////// COMPUTE CONSENSUS STEPS (@t=k) /////////////////
+    agent_data = get_sorted_agent_states(META, objectIndex);
+%     agent_data = apply_comm_model_obs(agent_data);
+%     agent_data = apply_comm_model(agent_data, comm_list);
+    agent_groups = break_agents_into_groups(META, agent_data);
+    consensus(agent_groups);
+    %gt_estimation = gt(agent_data);
+    % /////////////////////////////////////////////////////////////////////
+    
+    % 9. ///////////////// RECORD ESTIMATED STATE (@t=k) /////////////////////
+    for index = 1:numel(agent_data)
+        % Collect the META.OBJECTS.state data (as the simulations understanding of the global states) 
+        % and save to the output DATA.globalTrajectories set, must be done synchronously).
+        agent = agent_data{index};
+        X_agent = agent.memory_x;
+        IDs = agent.memory_id_list;
+        Obs = agent.memory_id_obs;
+        Comm = agent.memory_id_comm;
+        DATA.ids(index, 1:numel(IDs), META.TIME.currentStep) = IDs';
+        DATA.Observations(index, 1:numel(Obs), META.TIME.currentStep) = Obs';
+        DATA.Connections(index, 1:numel(Comm), META.TIME.currentStep) = Comm';
+        for ID = IDs
+            X_zero = agent.state_from_id(X_agent, IDs, agent.objectID);
+            X_estimate = agent.state_from_id(X_agent, IDs, ID);
+            X_relative = X_estimate - X_zero;
+            DATA.estimates_rel(index, ID, :, META.TIME.currentStep) = X_relative;
+%             DATA.estimates(index, ID, :, META.TIME.currentStep) = X_relative + ;
+
+            X_gt_agent = META.OBJECTS(agent.objectID).X;
+            X_gt_object = META.OBJECTS(ID).X;
+            X_gt_relative = X_gt_object - X_gt_agent;
+            DATA.estimate_errors(index, ID, :, META.TIME.currentStep) = X_relative - X_gt_relative;
+%             DATA.estimate_errors(index, ID, :, META.TIME.currentStep) = X_gt_relative;
+        end
+    end
+    % /////////////////////////////////////////////////////////////////////
+    
+    % 10. //////// UPDATE AGENT ESTIMATE FROM CONSENSUS DATA (@t=k) ////////
+    % update_agents_from_consensus(META, detection, objectIndex)
+    if META.threadPool ~= 0
+        objectSnapshot = objectIndex;                                      % Make a temporary record of the object set
+        parfor (ID1 = 1:META.totalObjects)
+            % MOVE THROUGH OBJECT INDEX AND UPDATE EACH AGENT
+            [objectIndex{ID1},objectEVENTS] = UpdateObject(META,objectSnapshot,objectIndex{ID1});            
+            % LOG THE OBJECT EVENTS
+            if ~isempty(objectEVENTS)
+                EVENTS = vertcat(EVENTS,objectEVENTS);
+            end
+        end
+    else
+        for ID1 = 1:META.totalObjects
+            % MOVE THROUGH OBJECT INDEX AND UPDATE EACH AGENT
+            [objectIndex{ID1},objectEVENTS] = UpdateObject(META,objectIndex,objectIndex{ID1}); % Update objectIndex snapshot with new META data
+            % LOG THE OBJECT EVENTS
+            if ~isempty(objectEVENTS)                                      % If objectEVENTS occur in this timestep
+                EVENTS = vertcat(EVENTS,objectEVENTS);                     % Append to global EVENTS
+            end
+        end
+    end
+    % /////////////////////////////////////////////////////////////////////
+    
+    % 11. /// THE 'OBJECT.VIRTUAL' PROPERTIES IS NOW UPDATED FOR (t=k+1) ///
     step = step + 1;
 end
 % CREATE TERMINAL VALUES, FOR CLARITY
@@ -429,10 +507,10 @@ for entityA = 1:SIM.totalObjects
         end     
     end
 end
-       
+
 end
 % UPDATE THE OBJECT PROPERTIES
-function [referenceObject,objectEVENTS] = UpdateObjects(SIM,objectIndex,referenceObject)
+function [observationPacket, referenceObject,objectEVENTS] = UpdateInformationFilter(SIM,objectIndex,referenceObject)
 % This function updates a referenceObject class against the rest of the
 % objectIndex, independantly of the SIM.OBJECTS META data.
 % INPUTS:
@@ -468,17 +546,25 @@ if SIM.verbosity >= 2
     fprintf('[UPDATE]\tCycling ID:%d\t name: %s\n',SIMfirstObject.objectID,referenceObject.name);
 end
 
+observationPacket = [];
 % SWITCH BEHAVIOUR BASED ON OBJECT TYPE
 switch SIMfirstObject.type
     case OMAS_objectType.agent
         % AGENT - SIMULATION/ENVIROMENTAL FEEDBACK REQUIRED %%%%%%%%%%%%%%
         % Container for agent detection packet
-        observationPacket = [];             
         
         % //// PARSE THE ENVIRONMENTAL OBJECTS OBSERVABLE TO THE AGENT ////
         for ID2 = 1:SIM.totalObjects
             % GET THE SIM OBJECT OF THE EVALUATION OBJECT
             SIMsecondObject = SIM.OBJECTS(ID2);
+            firstObject = objectIndex{SIMfirstObject.objectID};
+            comm_list = firstObject.memory_id_comm;
+            index = find(comm_list == ID2);
+            if ~isempty(index)
+                isConnected = true;
+            else
+                isConnected = false;
+            end
             
             % Skip condition - Get the current status of this object
             isDetected = 1 == SIMfirstObject.objectStatus(ID2,eventType.detection);
@@ -487,9 +573,13 @@ switch SIMfirstObject.type
                 continue
             end
             
+            if ~isConnected && SIMsecondObject.type == 1
+                continue
+            end
+            
             % GET THE EQUIVALENT OBJECT TO EVALUATE AGAINST THE REFERENCE
             secondObject = objectIndex{SIM.globalIDvector == SIMsecondObject.objectID};
-                            
+            
             % ///////////////// ELSE AGENT IS DETECTED ////////////////////
             % ////// (GENERATE A LOCALISED PROXIMITY DESCIPTION) //////////
             % The second agent is within global seperation conditions. A
@@ -502,8 +592,497 @@ switch SIMfirstObject.type
             relativePosition = SIMfirstObject.relativePositions(ID2,:)';
             relativeVelocity = SIMsecondObject.globalState(4:6) - SIMfirstObject.globalState(4:6);
             % ROTATE THE GLOBAL STATE OF THE OBJECT INTO THE AGENT FRAME
-            observedPosition = SIMfirstObject.R*relativePosition;            % Rotate the from the global into the body frame of the simReference
-            observedVelocity = SIMfirstObject.R*relativeVelocity;                   
+            %observedPosition = SIMfirstObject.R*relativePosition;         % Rotate the from the global into the body frame of the simReference
+            %observedVelocity = SIMfirstObject.R*relativeVelocity;
+            observedPosition = relativePosition(1:2);                           % Rotate the from the global into the body frame of the simReference
+            observedVelocity = relativeVelocity;
+            observedTheta = SIMsecondObject.eulZYX(1);
+            % SPHERICAL REPRESENTATION
+            observedRange    = norm(observedPosition);
+            
+            %noise_sigma = 0.2;
+            %noise = noise_sigma*eye(6);
+            % Add camera-specific noise
+            % [x y z phi theta psi dx dy dz dphi dtheta dpsi]
+            relative_X = SIMsecondObject.X(1:6) - SIMfirstObject.X(1:6);
+            range = norm(relative_X(1:3));
+            noise = svgs_R_from_range_SRT(range);
+            observedz = relative_X + mvnrnd(zeros(1, 6), noise)';
+            
+            % Define the motion model noise as:
+            % STD = 5% of traveled distance
+            % Therefore, 
+            Q_pos = (ENV.dt * norm(SIMsecondObject.X(7:9)) * 0.05)^2;
+            Q_theta = ENV.dt * norm(SIMsecondObject.X(10:12) * 0.05)^2;
+            
+            if SIMsecondObject.type == 1
+                % Observed object is an agent, grab the motion model and Q
+                observedF         = eye(2);
+                observedQ         = zeros(6);
+                observedQ(1:3,1:3)= Q_pos*eye(3);
+                observedQ(4:6,4:6)= Q_theta*eye(3);
+            else
+                % Observed object is an immobile object, motion model and Q = 0
+                observedF         = zeros(2);
+                observedQ         = zeros(6);
+                observedQ(1:3,1:3)= Q_pos*eye(3);
+                observedQ(4:6,4:6)= Q_theta*eye(3);
+            end
+            %observedElevation = asin(observedPosition(3)/observedRange);
+            %observedHeading   = atan2(observedPosition(2),observedPosition(1));
+            % PRESENT SIZE PROPERTIES
+            %observedRadius    = SIMfirstObject.radius;     
+            %observedAngularWidth = 2*asin(observedRadius/(observedRange + observedRadius));               
+                        
+            % OBJECT GEOMETRY PREPARATION
+            % In order for the agent to observe the object correctly. The
+            % geometry must be translated and rotated into the relative
+            % frame of the detecting agent.
+            % ASSUMPTION:
+            % - The geometry is normalised to the body axes of the object.
+            % TO DO:
+            % - If the object is on the edge of vision.. only part of the
+            %   object will be visable to the agent. a process must be in
+            %   place to create a subset of the geometry.
+
+            % OBJECT PRIORITY (IF WAYPOINT)
+            observedPriority = NaN;
+            if SIMsecondObject.type == OMAS_objectType.waypoint
+                association = objectIndex{ID2}.GetAgentAssociation(referenceObject);
+                observedPriority = association.priority;
+            end
+            
+            % A DEBUG STUCTURE 
+            DEBUG = struct('globalPosition',SIMsecondObject.globalState(dimensionIndices),...     % Added for simplicity
+                           'globalVelocity',SIMsecondObject.globalState(dimensionIndices + 3),... % Added for simplicity
+                           'priority',observedPriority);                                          % The objects global priority for that agent
+            
+            % ///////////////// PREPARE DETECTION PACKET //////////////////
+            detectionObject = struct('objectID',SIMsecondObject.objectID,...            % The object ID (observed)
+                                     'name',SIMsecondObject.name,...                    % The object name tag (observed)
+                                     'type',SIMsecondObject.type,...                    % The objects sim-type enum
+                                     'z',observedz,...                                  % The apparent range
+                                     'F',observedF,...                                  % The motion model jacobian
+                                     'Q',observedQ,...                                  % The motion model covariance
+                                     'colour',SIMsecondObject.colour,...                % Finally the simulation's colourID 
+                                     'DEBUG',DEBUG);                                    % Pass additional parameters (not otherwise known)
+            observationPacket = vertcat(observationPacket,detectionObject);             % Append object to packet to agent
+        end
+
+        % /////////////// COMPUTE THE LOCAL AGENT CYCLE ///////////////////
+        % Given the detection object defined for this agent, compute the
+        % agents cycle with this information.
+        % SEND OBJECT OBSERVERATION PACKET TO AGENT
+        referenceObject.InformationFilter(ENV.dt,observationPacket);
+    case OMAS_objectType.obstacle
+        % PASSIVE - NO FEEDBACK REQUIRED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        referenceObject = referenceObject.main(ENV);
+    case OMAS_objectType.waypoint
+        % WAYPOINTS ARE CONSIDERED PASSIVE - NO FEEDBACK REQUIRED %%%%%%%%%
+        referenceObject = referenceObject.main(ENV);
+    otherwise
+        % CONSIDERED PASSIVE - NO FEEDBACK REQUIRED %%%%%%%%%%%%%%%%%%%%%%%
+        % DO NOT UPDATE
+end
+end
+
+% /////////////////////// CONSENSUS OPERATIONS ////////////////////////////
+
+% Grab the agent with a specific ID
+% Done by looping through the list of agents and checking the ID
+function [agent] = agent_with_id(agents, ID)
+    for i = 1:numel(agents)
+        if agents(i).objectID == ID
+            agent = agents(i);
+            return;
+        end
+    end
+    agent = [];
+end
+
+% Ensures that every agent has the same state variables in the same order
+function [agents] = get_sorted_agent_states(SIM,objectIndex)
+
+    % Build combined list of ids
+    id_list = [];
+    for agent_index = 1:numel(SIM.OBJECTS)
+        if SIM.OBJECTS(agent_index).type == OMAS_objectType.agent
+            for i = 1:numel(SIM.OBJECTS)
+                if objectIndex{agent_index}.objectID == SIM.OBJECTS(agent_index).objectID
+                    agents{objectIndex{agent_index}.objectID} = objectIndex{agent_index};
+                    id_list = [id_list, objectIndex{agent_index}.memory_id_list];
+                end
+            end
+        end
+    end
+    
+    % Ensure that the list is sorted, so it is the same on sequential runs
+    id_list = sort(unique(id_list));
+    dim_state = agents{1}.dim_state;
+    dim_obs = agents{1}.dim_obs;
+    n_agents = numel(id_list);
+    
+    % Ensure all agents' state variables match the master list
+    for agent_index = 1:numel(agents)
+        agent = agents{agent_index};
+        
+        % If the state variables don't match, add them in
+        if ~isequal(agent.memory_id_list, id_list)
+            Y = 0.01*eye(n_agents*dim_state);
+            y = zeros(n_agents*dim_state, 1);
+            I = zeros(n_agents*dim_state);
+            i = zeros(n_agents*dim_state, 1);
+            
+            % Move the agents' values to the location specified in the master list
+            for agent_index_1 = 1:numel(agent.memory_id_list)
+                for agent_index_2 = 1:numel(agent.memory_id_list)
+                    
+                    group_index_1 = find(id_list == agent.memory_id_list(agent_index_1));
+                    group_index_2 = find(id_list == agent.memory_id_list(agent_index_2));
+                    
+                    % Generate indices (to make the assignment setp shorter)
+                    g_row_lo = dim_state*(group_index_1 - 1) + 1;
+                    g_row_hi = dim_state*group_index_1;
+                    g_col_lo = dim_state*(group_index_2 - 1) + 1;
+                    g_col_hi = dim_state*group_index_2;
+                    a_row_lo = dim_state*(agent_index_1 - 1) + 1;
+                    a_row_hi = dim_state*agent_index_1;
+                    a_col_lo = dim_state*(agent_index_2 - 1) + 1;
+                    a_col_hi = dim_state*agent_index_2;
+                    
+                    Y(g_row_lo:g_row_hi,g_col_lo:g_col_hi) = agent.memory_Y(a_row_lo:a_row_hi,a_col_lo:a_col_hi);
+                    I(g_row_lo:g_row_hi,g_col_lo:g_col_hi) = agent.memory_I(a_row_lo:a_row_hi,a_col_lo:a_col_hi);
+                end
+                
+                y(g_row_lo:g_row_hi) = agent.memory_y(a_row_lo:a_row_hi);
+                i(g_row_lo:g_row_hi) = agent.memory_i(a_row_lo:a_row_hi);
+            end
+            
+            agent.memory_id_list = id_list;
+            agent.memory_Y = Y;
+            agent.memory_y = y;
+            agent.memory_I = I;
+            agent.memory_i = i;
+        end
+    end
+end
+
+% Update the momory_id_comm list in each agent to include each agent they
+% can communicate with (based on a communication model).
+function [agents] = apply_comm_model_obs(agents)
+
+    % Apply communication model and create list of agents each agent can communicate with
+    % Current communication model is the same as the observation model
+    agents_arr = [];
+    for agent = agents
+        agents_arr = [agents_arr, agent{1}];
+    end
+    for agent = agents_arr
+        agent.memory_id_comm = [];
+        for i = 1:numel(agent.memory_id_obs)
+            if ~isempty(agent_with_id(agents_arr, agent.memory_id_obs(i)))
+                agent.memory_id_comm = [agent.memory_id_comm, agent.memory_id_obs(i)];
+            end
+        end
+    end
+end
+
+% Update the momory_id_comm list in each agent to include each agent they
+% can communicate with (based on a communication model).
+function [agents] = apply_comm_model(SIM, agents, comm_list)
+
+    % Apply communication model and create list of agents each agent can communicate with
+    % Current communication model is the same as the observation model
+    agents_arr = [];
+    for id = 1:numel(agents)
+        agent = agents{id};
+        if SIM.OBJECTS(agent.objectID).type == 1
+            agents_arr = [agents_arr, agent];
+        end
+    end
+    for index = 1:numel(agents_arr)
+        agent = agents_arr(index);
+        agent_comm_list = cell2mat(comm_list{index});
+        agent.memory_id_comm = agent_comm_list;
+    end
+end
+
+% Break agents up into groups based on communication graph
+function [agent_groups] = break_agents_into_groups(SIM, agent_data)
+    % Split into groups of agents that can communicate with eachother, 
+    % and puts those agents in a group. Continues this along the chain
+    % until there are no more agents in this group, then finds the other
+    % isolated groups. 
+    
+    agent_groups = [];
+    num_groups = 0;
+    % While there are still agents to group up
+    while numel(agent_data) > 0
+        
+        % Start with the first remaining agent
+        group = agent_data{1};
+        id_obs = group(1).memory_id_comm;
+        new_group = 1;
+        agent_data(1) = [];
+        
+        % while there are new agents in the group
+        while new_group > 0
+            
+            % Get a list of the newly-observed IDs
+            len = numel(group);
+            tmp = group(1,len-new_group+1:len);
+            id_obs_new = [];
+            for m = 1:numel(tmp)
+                id_obs_new = [id_obs_new, tmp(m).memory_id_comm];
+            end
+            id_obs_new = sort(unique(id_obs_new));
+            id_obs_new = setdiff(id_obs_new, id_obs);
+            id_obs = sort([id_obs, id_obs_new]);
+            new_group = 0;
+            indices = [];
+            
+            % Get the agents with ids matching the observed list
+            for i = id_obs
+                for j = 1:numel(agent_data)
+                    if agent_data{j}.objectID == i
+                        group = [group, agent_data{j}];
+                        new_group = new_group + 1;
+                        indices = [indices, j];
+                    end
+                end
+            end
+            
+            % Remove grouped agents from the general pool
+            for i = sort(indices, 'descend')
+                agent_data(i) = [];
+            end
+        end
+        agent_groups{num_groups+1} = group;
+        num_groups = num_groups + 1;
+    end
+end
+
+% Create a graph from a group of agents
+function [graph, id_to_index] = create_graph(agents)
+    adj = eye(numel(agents));
+    
+    id_to_index = [];
+    for i = 1:numel(agents)
+        id_to_index(i) = agents(i).objectID;
+    end
+    
+    for i = 1:numel(agents)
+        for j = agents(i).memory_id_comm
+            adj(i,find(j == id_to_index)) = 1;
+        end
+    end
+    
+    if size(adj,1) == 1 & size(adj,2) == 1
+        tmp = 0;
+    end
+    
+    graph = generate_graph(adj);
+    
+end
+
+% Perform one consensus step
+function [consensus_data] = consensus_group(agents, step, num_steps)
+    % Perform consensus computations
+    
+    %% Initialize Graph
+    % Generate graph
+        % Create adjacency matrix
+        % use generate_graph function
+    [graph, id_to_index] = create_graph(agents);
+    size_comp = networkComponents(graph.p);
+    
+    %% Compute and store consensus variables
+    for i = 1:numel(agents)
+        
+        % Grab variables from neighboring agents
+        Y_local = [];
+        y_local = [];
+        idx_neighbors = agents(i).memory_id_comm;
+        
+        for j = 1:numel(idx_neighbors)
+            agent = agent_with_id(agents, idx_neighbors(j));
+            Y_local(:,:,j) = (agent.memory_Y);
+            y_local(:,:,j) = (agent.memory_y);
+        end
+        
+        % Compute and apply CI weights
+        [weights_ci,Y_prior,y_prior] = calc_ci_weights_ver3(Y_local,y_local,'det');
+        
+        delta_I = zeros(size(agents(1).memory_I));
+        delta_i = zeros(size(agents(1).memory_i));
+        
+        for j = 1:numel(agents)
+            p_jk = graph.p(i,j);
+            
+            delta_I = delta_I + p_jk*agents(j).memory_I;
+            delta_i = delta_i + p_jk*agents(j).memory_i;
+        end
+        
+        ratio = step / num_steps;
+        Y = Y_prior + ratio*size_comp(i)*delta_I;
+        y = y_prior + ratio*size_comp(i)*delta_i;
+        
+        consensus_data{i}.Y = Y;
+        consensus_data{i}.y = y;
+        consensus_data{i}.Y_prior = Y_prior;
+        consensus_data{i}.y_prior = y_prior;
+        consensus_data{i}.delta_I = delta_I;
+        consensus_data{i}.delta_i = delta_i;
+    end
+end
+
+function [agent_groups] = consensus(agent_groups)
+    num_steps = 20;
+    for group_num = 1:numel(agent_groups)
+        if numel(agent_groups{group_num}) == 1
+            agent_groups{group_num}.memory_Y = agent_groups{group_num}.memory_Y + agent_groups{group_num}.memory_I;
+            agent_groups{group_num}.memory_y = agent_groups{group_num}.memory_y + agent_groups{group_num}.memory_i;
+            agent_groups{group_num}.memory_P = inv(agent_groups{group_num}.memory_Y);
+            agent_groups{group_num}.memory_x = inv(agent_groups{group_num}.memory_Y) * agent_groups{group_num}.memory_y;
+        else
+            % Compute first consensus step
+            step = 1;
+            for i = 1:numel(agent_groups{group_num})
+                consensus_data{step, group_num}{i}.Y_prior = agent_groups{group_num}(i).memory_Y;
+                consensus_data{step, group_num}{i}.y_prior = agent_groups{group_num}(i).memory_y;
+                consensus_data{step, group_num}{i}.delta_I = agent_groups{group_num}(i).memory_I;
+                consensus_data{step, group_num}{i}.delta_i = agent_groups{group_num}(i).memory_i;
+            end
+
+            % Compute the remaining consensus steps
+            for step = 2:num_steps
+                consensus_data{step, group_num} = consensus_group(agent_groups{group_num}, step, num_steps);
+
+                % After all agents' variables have been computed, store them
+                for i = 1:numel(consensus_data{step, group_num})
+                    agent_groups{group_num}(i).memory_Y = consensus_data{step, group_num}{i}.Y_prior;
+                    agent_groups{group_num}(i).memory_y = consensus_data{step, group_num}{i}.y_prior;
+                    agent_groups{group_num}(i).memory_I = consensus_data{step, group_num}{i}.delta_I;
+                    agent_groups{group_num}(i).memory_i = consensus_data{step, group_num}{i}.delta_i;
+                end
+            end
+
+            % Store final consensus in each agent
+            for i = 1:numel(consensus_data{step, group_num})
+                agent_groups{group_num}(i).memory_Y = consensus_data{step, group_num}{i}.Y;
+                agent_groups{group_num}(i).memory_y = consensus_data{step, group_num}{i}.y;
+                agent_groups{group_num}(i).memory_P = inv(consensus_data{step, group_num}{i}.Y);
+                agent_groups{group_num}(i).memory_x = inv(consensus_data{step, group_num}{i}.Y) * consensus_data{step, group_num}{i}.y;
+            end
+        end
+    end
+end
+
+% function [gt_estimation] = gt(agent_data)
+%     y = y_1 + i_1 + i_2;
+% end
+
+function [rel_pos] = position_from_id(agent, id)
+
+    x = agent.memory_x;
+    index_id = find(id == agent.memory_id_list);
+    index_agent = find(agent.objectID == agent.memory_id_list);
+    dim_state = agent.dim_state;
+
+    % Generate indices (to make the assignment setp shorter)
+    meas_low = dim_state*(index_id - 1) + 1;
+    meas_high = dim_state*index_id;
+    agent_low = dim_state*(index_agent - 1) + 1;
+    agent_high = dim_state*index_agent;
+
+    rel_pos = x(meas_low:meas_high) - x(agent_low:agent_high);
+    rel_pos = rel_pos(1:2);
+end
+
+% /////////////////// SIMULATION OUTPUT OPERATIONS ////////////////////////
+
+function update_agents_from_consensus(SIM, detection, objectIndex)
+    observed_objects = [];
+    for index = 1:numel(detection)
+        for id_index = 1:numel(detection{index})
+            agent = objectIndex{index};
+            tmp = detection{index}.objectID;
+            position = position_from_id(agent, tmp);
+            detected_pos = detection{index}.position;
+            detection{index}.position(1) = position(1);
+            ENV = SIM.TIME;
+            agent.main(ENV,observationPacket);
+        end
+    end
+end
+        
+% UPDATE THE OBJECT PROPERTIES
+function [referenceObject,objectEVENTS] = UpdateObject(SIM,objectIndex,referenceObject)
+% This function updates a referenceObject class against the rest of the
+% objectIndex, independantly of the SIM.OBJECTS META data.
+% INPUTS:
+% SIM             - Current META structure
+% objectIndex     - The current object list
+% referenceObject - The agent object being updated
+
+% OUTPUTS:
+% referenceObject - The updated agent class
+
+objectEVENTS = []; % Container for object based events
+
+% GET THE OBJECTS EQUIVALENT SIM OBJECT
+SIMfirstObject = SIM.OBJECTS(SIM.globalIDvector == referenceObject.objectID);
+firstObject = objectIndex{SIM.globalIDvector == SIMfirstObject.objectID};
+
+% If the observing object is "2D"
+if referenceObject.Is3D()
+    dimensionIndices = 1:3;
+else
+    dimensionIndices = 1:2;
+end
+
+if SIM.verbosity >= 2
+    fprintf('[UPDATE]\tCycling ID:%d\t name: %s\n',SIMfirstObject.objectID,referenceObject.name);
+
+end
+
+% Default timing parameters
+ENV = SIM.TIME;
+ENV.outputPath = SIM.outputPath;
+
+if SIM.verbosity >= 2
+    fprintf('[UPDATE]\tCycling ID:%d\t name: %s\n',SIMfirstObject.objectID,referenceObject.name);
+end
+
+observationPacket = [];
+% SWITCH BEHAVIOUR BASED ON OBJECT TYPE
+switch SIMfirstObject.type
+    case OMAS_objectType.agent
+        % AGENT - SIMULATION/ENVIROMENTAL FEEDBACK REQUIRED %%%%%%%%%%%%%%
+        % Container for agent detection packet
+        
+        % //// PARSE THE ENVIRONMENTAL OBJECTS OBSERVABLE TO THE AGENT ////
+        for ID2 = firstObject.memory_id_obs
+            % GET THE SIM OBJECT OF THE EVALUATION OBJECT
+            SIMsecondObject = SIM.OBJECTS(ID2);
+            
+            % GET THE EQUIVALENT OBJECT TO EVALUATE AGAINST THE REFERENCE
+            secondObject = objectIndex{SIM.globalIDvector == SIMsecondObject.objectID};
+                            
+            % ///////////////// ELSE AGENT IS DETECTED ////////////////////
+            % ////// (GENERATE A LOCALISED PROXIMITY DESCIPTION) //////////
+            % The second agent is within global seperation conditions. A
+            % communication packet is therefore assembled containing the
+            % data on the second object. rotated into the agent-local
+            % coordinate frame.
+            
+            % GET THE RELATIVE POSITIONS OF THE AGENT AND OBJECT IN THE 
+            % GLOBAL COORDINATE SYSTEM (x_rel = x_B - x_A)
+            relativePosition = [position_from_id(firstObject, secondObject.objectID); 0];
+            relativeVelocity = SIMsecondObject.globalState(4:6) - SIMfirstObject.globalState(4:6);
+            % ROTATE THE GLOBAL STATE OF THE OBJECT INTO THE AGENT FRAME
+            observedPosition = SIMfirstObject.R*relativePosition;          % Rotate the from the global into the body frame of the simReference
+            observedVelocity = SIMfirstObject.R*relativeVelocity;
             % SPHERICAL REPRESENTATION
             observedRange     = norm(observedPosition);
             observedElevation = asin(observedPosition(3)/observedRange);
@@ -575,14 +1154,8 @@ switch SIMfirstObject.type
         % /////////////// COMPUTE THE LOCAL AGENT CYCLE ///////////////////
         % Given the detection object defined for this agent, compute the
         % agents cycle with this information.
-        try
-            % SEND OBJECT OBSERVERATION PACKET TO AGENT
-            referenceObject = referenceObject.main(ENV,observationPacket);                      % Hand the current sim TIME object and complete observation packet
-        catch objectProcessError             
-            warning('[%s]: Cycle failed, there was a problem with the object (%s) file, please check: %s',...
-                     SIM.phase,referenceObject.name,objectProcessError.stack(1).name);
-            rethrow(objectProcessError);    
-        end
+        % SEND OBJECT OBSERVERATION PACKET TO AGENT
+        referenceObject.main(ENV,observationPacket);
     case OMAS_objectType.obstacle
         % PASSIVE - NO FEEDBACK REQUIRED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         referenceObject = referenceObject.main(ENV);
@@ -609,6 +1182,9 @@ function [DATA] = GetOutputStructure(SIM)
 globalStateNum = size(SIM.OBJECTS(1).globalState,1);
 systemStates = globalStateNum*SIM.totalObjects;                            % The total number of system states
 % DEFINE THE GLOBAL STATE INDICES
+id_initial = zeros(SIM.totalAgents, SIM.totalObjects, SIM.TIME.numSteps);
+comm_initial = zeros(SIM.totalAgents, SIM.totalAgents, SIM.TIME.numSteps);
+estimate_initial = zeros(SIM.totalAgents, SIM.totalObjects, 12, SIM.TIME.numSteps);
 indexSet = zeros(2,length(SIM.OBJECTS));                                   % Indices are defined [start;end]*n
 indexSet(1,:) = (0:globalStateNum:systemStates-globalStateNum) + 1;        % Declare the state indices
 indexSet(2,:) = globalStateNum:globalStateNum:systemStates;
@@ -623,6 +1199,14 @@ DATA = struct('outputPath',[SIM.outputPath,'DATA.mat'],...
               'timeVector',SIM.TIME.timeVector,...
                       'dt',SIM.TIME.dt,...
               'stateIndex',indexSet,...
+                     'ids',id_initial,...
+            'Observations',id_initial,...
+             'Connections',comm_initial,...
+           'estimates_rel',estimate_initial,...
+     'estimate_errors_rel',estimate_initial,...
+               'estimates',estimate_initial,...
+         'estimate_errors',estimate_initial,...
+     'estimate_covariance',[],...
       'globalTrajectories',NaN(systemStates,SIM.TIME.numSteps));         % Prepare the output container
 %       'globalTrajectories',zeros(systemStates,SIM.TIME.numSteps));         % Prepare the output container
 end
